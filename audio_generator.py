@@ -19,6 +19,10 @@ class AudioGenerator:
         return text
 
     def speed_up_audio_file(self, file_path):
+        if self.speed == 1:
+            print("Speed is 1, skipping speed-up process.")
+            return
+
         audio = AudioSegment.from_file(file_path)
         sped_up_audio = audio.speedup(playback_speed=self.speed)
         sped_up_audio.export(file_path, format="mp3")
@@ -37,16 +41,22 @@ class AudioGenerator:
             "model_id": "eleven_monolingual_v1",
             "voice_settings": {
                 "stability": 0.5,
-                "similarity_boost": 0.5
+                "similarity_boost": 0.75
             }
         }
         
         response = requests.post(url, json=data, headers=headers)
         
+        if response.status_code != 200:
+            raise Exception(f"API request failed with status code {response.status_code}: {response.text}")
+        
         with open(output_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=self.chunk_size):
                 if chunk:
                     f.write(chunk)
+        
+        print(f"Audio file saved to {output_path}")
 
         if self.set_speed_up:
             self.speed_up_audio_file(output_path)
+            print(f"Audio file sped up and saved to {output_path}")
