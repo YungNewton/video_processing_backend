@@ -15,12 +15,13 @@ def upload_file():
         print("Received request")
         # Get the uploaded files and form data
         text_file = request.files['text']
+        video_file = request.files.get('video')  # Get the video file if provided
         voice_id = request.form.get('voice_id')
         api_key = request.form.get('api_key')
         speed = float(request.form.get('speed', 1.15))
-        set_speed_up = request.form.get('set_speed_up', 'true').lower() == 'true'
+        set_speed_up = request.form.get('set_speed_up') == 'on'  # Interpret checkbox value correctly
 
-        print(f"Text file: {text_file.filename}, Voice ID: {voice_id}, API Key: {api_key}, Speed: {speed}, Set Speed Up: {set_speed_up}")
+        print(f"Text file: {text_file.filename}, Video file: {video_file.filename if video_file else 'None'}, Voice ID: {voice_id}, API Key: {api_key}, Speed: {speed}, Set Speed Up: {set_speed_up}")
 
         # Create an instance of AudioGenerator
         audio_generator = AudioGenerator(api_key, speed, set_speed_up)
@@ -32,6 +33,11 @@ def upload_file():
             # Save the uploaded text file
             text_path = temp_path / text_file.filename
             save_uploaded_file(text_file, text_path)
+
+            # Save the video file if provided (not used currently)
+            if video_file:
+                video_path = temp_path / video_file.filename
+                save_uploaded_file(video_file, video_path)
 
             # Define the output audio file path
             output_path = text_path.with_suffix('.mp3')
