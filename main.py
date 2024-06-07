@@ -3,7 +3,7 @@ from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from script_to_audio import AudioGenerator
+from audio_generator import AudioGenerator
 from utils import save_uploaded_file
 
 app = Flask(__name__)
@@ -14,10 +14,10 @@ def upload_file():
     try:
         # Get the uploaded files and form data
         text_file = request.files['text']
-        voice_id = request.form['voice-id']
-        api_key = request.form['apiKey']
-        speed = float(request.form['speed'])
-        set_speed_up = True  # This can be modified to be dynamic if needed
+        voice_id = request.form.get('voice_id')
+        api_key = request.form.get('api_key')
+        speed = float(request.form.get('speed', 1.15))
+        set_speed_up = request.form.get('set_speed_up', 'true').lower() == 'true'
 
         # Create an instance of AudioGenerator
         audio_generator = AudioGenerator(api_key, speed, set_speed_up)

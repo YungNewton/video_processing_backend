@@ -1,14 +1,13 @@
+import requests
 from pathlib import Path
-from elevenlabs.client import ElevenLabs
-from elevenlabs import save
 from pydub import AudioSegment
 
 class AudioGenerator:
-    def __init__(self, api_key: str, speed: float, set_speed_up: bool):
+    def __init__(self, api_key: str, speed: float = 1.15, set_speed_up: bool = True):
         self.api_key = api_key
         self.speed = speed
         self.set_speed_up = set_speed_up
-        self.client = ElevenLabs(api_key=api_key)
+        self.chunk_size = 1024
 
     def read_text_file(self, file_path: Path) -> str:
         if not file_path.is_file():
@@ -26,7 +25,28 @@ class AudioGenerator:
 
     def generate_audio(self, text_path: Path, output_path: Path, voice_id: str):
         text = self.read_text_file(text_path)
-        audio = self.client.generate(text=text, voice_id=voice_id)
-        save(audio, output_path)
+        
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        headers = {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": self.api_key
+        }
+        data = {
+            "text": text,
+            "model_id": "eleven_monolingual_v1",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.5
+            }
+        }
+        
+        response = requests.post(url, json=data, headers=headers)
+        
+        with open(output_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=self.chunk_size):
+                if chunk:
+                    f.write(chunk)
+
         if self.set_speed_up:
             self.speed_up_audio_file(output_path)
