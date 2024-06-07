@@ -1,11 +1,13 @@
 import os
 from flask import Flask, request, send_file, jsonify
+from flask_cors import CORS
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from script_to_audio import AudioGenerator
 from utils import save_uploaded_file
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
