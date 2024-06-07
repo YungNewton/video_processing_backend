@@ -12,12 +12,15 @@ CORS(app)  # Enable CORS for all routes
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
+        print("Received request")
         # Get the uploaded files and form data
         text_file = request.files['text']
         voice_id = request.form.get('voice_id')
         api_key = request.form.get('api_key')
         speed = float(request.form.get('speed', 1.15))
         set_speed_up = request.form.get('set_speed_up', 'true').lower() == 'true'
+
+        print(f"Text file: {text_file.filename}, Voice ID: {voice_id}, API Key: {api_key}, Speed: {speed}, Set Speed Up: {set_speed_up}")
 
         # Create an instance of AudioGenerator
         audio_generator = AudioGenerator(api_key, speed, set_speed_up)
@@ -40,6 +43,7 @@ def upload_file():
             return send_file(output_path, as_attachment=True)
 
     except Exception as e:
+        print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
