@@ -30,7 +30,8 @@ RUN python3 setup.py install
 WORKDIR /app
 
 # Install Flask and other Python dependencies
-RUN python3 -m pip install Flask Flask-Cors pydub
+COPY requirements.txt .
+RUN python3 -m pip install -r requirements.txt
 
 # Run the Flask application when the container launches
-CMD ["python3", "app.py"]
+CMD ["python3", "main.py"]
