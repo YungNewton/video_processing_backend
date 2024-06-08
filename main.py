@@ -14,7 +14,9 @@ from video_processor import VideoProcessor
 import zipfile
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+
+# Configure CORS
+CORS(app, resources={r"/upload": {"origins": "https://yungnewton.github.io"}})
 
 logging.basicConfig(level=logging.DEBUG)
 
