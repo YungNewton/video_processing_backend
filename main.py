@@ -32,7 +32,10 @@ def upload_file():
         api_key = request.form.get('api_key')
         speed = request.form.get('speed')
         set_speed_up = request.form.get('set_speed_up')
-        bgm_choice = request.form.get('bgm_choice', 'sad')
+        happy_start = int(request.form.get('happy_start'))
+        happy_end = int(request.form.get('happy_end'))
+        sad_start = int(request.form.get('sad_start'))
+        sad_end = int(request.form.get('sad_end'))
 
         if not text_file:
             logging.debug("No text file uploaded")
@@ -48,7 +51,8 @@ def upload_file():
 
         logging.debug(f"Text file: {text_file.filename if text_file else 'None'}")
         logging.debug(f"Video file: {video_file.filename if video_file else 'None'}")
-        logging.debug(f"Voice ID: {voice_id}, API Key: {api_key}, Speed: {speed}, Set Speed Up: {set_speed_up}, BGM Choice: {bgm_choice}")
+        logging.debug(f"Voice ID: {voice_id}, API Key: {api_key}, Speed: {speed}, Set Speed Up: {set_speed_up}")
+        logging.debug(f"Happy Start: {happy_start}, Happy End: {happy_end}, Sad Start: {sad_start}, Sad End: {sad_end}")
 
         # Create instances of AudioGenerator, SilenceRemover, and VideoToAudioConverter
         audio_generator = AudioGenerator(api_key, speed, set_speed_up)
@@ -104,8 +108,10 @@ def upload_file():
                 logging.error(f"Trimmed audio file does not exist: {trimmed_audio_path}")
 
             # Copy background music files to the temporary directory
-            bgm_path = temp_path / f"{bgm_choice}.mp3"
-            copyfile(Path(__file__).parent / f"{bgm_choice}.mp3", bgm_path)
+            bgm_happy_path = temp_path / "happy.mp3"
+            bgm_sad_path = temp_path / "sad.mp3"
+            copyfile(Path(__file__).parent / "happy.mp3", bgm_happy_path)
+            copyfile(Path(__file__).parent / "sad.mp3", bgm_sad_path)
 
             # Prepare input pairs for RunAeneas
             input_pairs = [
@@ -136,7 +142,12 @@ def upload_file():
                 srt_path_new=new_timestamps_srt,
                 srt_path_old=old_timestamps_srt,
                 video_path=video_path,
-                bgm_choice=bgm_path,
+                bgm_happy_path=bgm_happy_path,
+                bgm_sad_path=bgm_sad_path,
+                happy_start=happy_start,
+                happy_end=happy_end,
+                sad_start=sad_start,
+                sad_end=sad_end,
                 output_dir=temp_path
             )
             final_video_path = video_processor.process_video()
