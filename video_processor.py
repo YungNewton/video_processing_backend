@@ -2,16 +2,17 @@ import os
 import re
 import logging
 import subprocess
+from pathlib import Path
 
 class VideoProcessor:
     def __init__(self, new_mp3_path, srt_path_new, srt_path_old, video_path, bgm_choice, output_dir):
-        self.new_mp3_path = new_mp3_path
-        self.srt_path_new = srt_path_new
-        self.srt_path_old = srt_path_old
-        self.video_path = video_path
-        self.bgm_choice = bgm_choice
-        self.output_dir = output_dir
-        os.makedirs(output_dir, exist_ok=True)
+        self.new_mp3_path = Path(new_mp3_path)
+        self.srt_path_new = Path(srt_path_new)
+        self.srt_path_old = Path(srt_path_old)
+        self.video_path = Path(video_path)
+        self.bgm_choice = Path(bgm_choice)
+        self.output_dir = Path(output_dir)
+        os.makedirs(self.output_dir, exist_ok=True)
 
     def parse_srt(self, srt_path):
         timestamps = []
@@ -67,15 +68,15 @@ class VideoProcessor:
     def trim_video_clips(self, timestamps):
         clips = []
         for i, (start, end) in enumerate(timestamps):
-            output_clip = os.path.join(self.output_dir, f"clip_{i}.mp4")
+            output_clip = self.output_dir / f"clip_{i}.mp4"
             ffmpeg_command = [
                 "ffmpeg", "-y",
-                "-i", self.video_path,
+                "-i", str(self.video_path),
                 "-ss", f"{start:.4f}",
                 "-to", f"{end:.4f}",
                 "-c:v", "libx264",
                 "-c:a", "aac",
-                output_clip
+                str(output_clip)
             ]
             try:
                 subprocess.run(ffmpeg_command, check=True)
@@ -88,35 +89,36 @@ class VideoProcessor:
         return clips
 
     def concatenate_clips(self, clips, output_path):
-        with open("filelist.txt", "w") as file:
+        with open(self.output_dir / "filelist.txt", "w") as file:
             for clip in clips:
                 file.write(f"file '{os.path.abspath(clip)}'\n")
         ffmpeg_command = [
             "ffmpeg", "-y",
             "-f", "concat",
             "-safe", "0",
-            "-i", "filelist.txt",
+            "-i", str(self.output_dir / "filelist.txt"),
             "-c", "copy",
-            output_path
+            str(output_path)
         ]
         subprocess.run(ffmpeg_command, check=True)
-        os.remove("filelist.txt")
+        os.remove(self.output_dir / "filelist.txt")
 
     def overlay_audio(self, concatenated_video_path, final_output_path, bgm_track_path):
         ffmpeg_command = [
             "ffmpeg", "-y",
-            "-i", concatenated_video_path,
+            "-i", str(concatenated_video_path),
             "-i", str(self.new_mp3_path),
-            "-i", bgm_track_path,
+            "-i", str(bgm_track_path),
             "-filter_complex", "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "copy",
             "-c:a", "aac",
-            final_output_path
+            str(final_output_path)
         ]
         try:
-            subprocess.run(ffmpeg_command, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+            result = subprocess.run(ffmpeg_command, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+            logging.debug(f"ffmpeg stdout: {result.stdout.decode('utf-8')}")
         except subprocess.CalledProcessError as e:
             logging.error(f"ffmpeg command failed with error: {e.stderr.decode('utf-8')}")
             raise
@@ -126,9 +128,8 @@ class VideoProcessor:
         time_diffs = self.compare_timestamps(old_timestamps, new_timestamps)
         refined_timestamps = self.refine_timestamps(old_timestamps, time_diffs)
         trimmed_clips = self.trim_video_clips(refined_timestamps)
-        concatenated_video_path = os.path.join(self.output_dir, "concatenated_video.mp4")
+        concatenated_video_path = self.output_dir / "concatenated_video.mp4"
         self.concatenate_clips(trimmed_clips, concatenated_video_path)
-        final_output_path = os.path.join(self.output_dir, "final_video.mp4")
-        bgm_track_path = os.path.join(self.output_dir, f"{self.bgm_choice}.mp3")
-        self.overlay_audio(concatenated_video_path, final_output_path, bgm_track_path)
+        final_output_path = self.output_dir / "final_video.mp4"
+        self.overlay_audio(concatenated_video_path, final_output_path, self.bgm_choice)
         return final_output_path

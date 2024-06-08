@@ -134,7 +134,7 @@ def upload_file():
                 srt_path_new=new_timestamps_srt,
                 srt_path_old=old_timestamps_srt,
                 video_path=video_path,
-                bgm_choice=bgm_choice,
+                bgm_choice=bgm_path,
                 output_dir=temp_path
             )
             final_video_path = video_processor.process_video()
