@@ -106,7 +106,7 @@ class VideoProcessor:
         ffmpeg_command = [
             "ffmpeg", "-y",
             "-i", concatenated_video_path,
-            "-i", self.new_mp3_path,
+            "-i", str(self.new_mp3_path),
             "-i", bgm_track_path,
             "-filter_complex", "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
             "-map", "0:v",
@@ -115,7 +115,11 @@ class VideoProcessor:
             "-c:a", "aac",
             final_output_path
         ]
-        subprocess.run(ffmpeg_command, check=True)
+        try:
+            subprocess.run(ffmpeg_command, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            logging.error(f"ffmpeg command failed with error: {e.stderr.decode('utf-8')}")
+            raise
 
     def process_video(self):
         new_timestamps, old_timestamps = self.generate_length_for_audios()

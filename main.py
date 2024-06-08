@@ -3,6 +3,7 @@ import logging
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from pathlib import Path
+from shutil import copyfile
 from tempfile import TemporaryDirectory
 from audio_generator import AudioGenerator
 from silence_remover import SilenceRemover
@@ -99,6 +100,10 @@ def upload_file():
             # Verify trimmed audio file exists
             if not os.path.exists(trimmed_audio_path):
                 logging.error(f"Trimmed audio file does not exist: {trimmed_audio_path}")
+
+            # Copy background music files to the temporary directory
+            bgm_path = temp_path / f"{bgm_choice}.mp3"
+            copyfile(Path(__file__).parent / f"{bgm_choice}.mp3", bgm_path)
 
             # Prepare input pairs for RunAeneas
             input_pairs = [
