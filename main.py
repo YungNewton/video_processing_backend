@@ -9,6 +9,7 @@ from silence_remover import SilenceRemover
 from video_to_audio_converter import VideoToAudioConverter
 from run_aeneas import RunAeneas
 from utils import save_uploaded_file
+from video_processor import VideoProcessor
 import zipfile
 
 app = Flask(__name__)
@@ -28,6 +29,7 @@ def upload_file():
         api_key = request.form.get('api_key')
         speed = request.form.get('speed')
         set_speed_up = request.form.get('set_speed_up')
+        bgm_choice = request.form.get('bgm_choice', 'sad')
 
         if not text_file:
             logging.debug("No text file uploaded")
@@ -43,7 +45,7 @@ def upload_file():
 
         logging.debug(f"Text file: {text_file.filename if text_file else 'None'}")
         logging.debug(f"Video file: {video_file.filename if video_file else 'None'}")
-        logging.debug(f"Voice ID: {voice_id}, API Key: {api_key}, Speed: {speed}, Set Speed Up: {set_speed_up}")
+        logging.debug(f"Voice ID: {voice_id}, API Key: {api_key}, Speed: {speed}, Set Speed Up: {set_speed_up}, BGM Choice: {bgm_choice}")
 
         # Create instances of AudioGenerator, SilenceRemover, and VideoToAudioConverter
         audio_generator = AudioGenerator(api_key, speed, set_speed_up)
@@ -121,14 +123,26 @@ def upload_file():
             if not os.path.exists(old_timestamps_srt):
                 logging.error(f"Old timestamps SRT file does not exist: {old_timestamps_srt}")
 
-            # Zip the SRT files and the silence-removed audio
-            zip_path = temp_path / "srt_files.zip"
+            # Create and run VideoProcessor instance
+            video_processor = VideoProcessor(
+                new_mp3_path=trimmed_audio_path,
+                srt_path_new=new_timestamps_srt,
+                srt_path_old=old_timestamps_srt,
+                video_path=video_path,
+                bgm_choice=bgm_choice,
+                output_dir=temp_path
+            )
+            final_video_path = video_processor.process_video()
+
+            # Zip the SRT files, the silence-removed audio, and the final video
+            zip_path = temp_path / "output_files.zip"
             with zipfile.ZipFile(zip_path, 'w') as zf:
                 zf.write(new_timestamps_srt, new_timestamps_srt.name)
                 zf.write(old_timestamps_srt, old_timestamps_srt.name)
                 zf.write(trimmed_audio_path, trimmed_audio_path.name)  # Add the silence-removed audio
+                zf.write(final_video_path, final_video_path.name)  # Add the final video
 
-            logging.debug(f"Zipped SRT files: {zip_path}")
+            logging.debug(f"Zipped output files: {zip_path}")
 
             return send_file(zip_path, as_attachment=True, download_name="output_files.zip")
 

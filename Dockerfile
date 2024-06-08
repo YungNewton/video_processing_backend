@@ -29,9 +29,9 @@ RUN python3 setup.py install
 # Change back to the app directory
 WORKDIR /app
 
-# Install Flask and other Python dependencies
-COPY requirements.txt .
-RUN python3 -m pip install -r requirements.txt
+# Copy background music files
+COPY happy.mp3 /app/
+COPY sad.mp3 /app/
 
-# Run the Flask application when the container launches
+# Run the script when the container launches
 CMD ["python3", "main.py"]
