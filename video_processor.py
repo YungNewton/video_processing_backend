@@ -146,7 +146,7 @@ class VideoProcessor:
         old_audio_timestamps = self.parse_srt(self.srt_path_old)
         return new_audio_timestamps, old_audio_timestamps
 
-    def compare_timestamps(self, old_timestamps, new_timestamps):
+    def compare_timestamps(self, old_timestamps, new_timestamps, tolerance=1e-6):
         if len(old_timestamps) != len(new_timestamps):
             raise ValueError("The number of old and new timestamps must be the same.")
         time_diffs = []
@@ -154,7 +154,10 @@ class VideoProcessor:
             old_duration = old_end - old_start
             new_duration = new_end - new_start
             time_diff = new_duration - old_duration
+            if abs(time_diff) < tolerance:
+                time_diff = 0  # Consider negligible differences as zero
             time_diffs.append(time_diff)
+
         return time_diffs
 
     def refine_timestamps(self, old_timestamps, time_diffs):
@@ -164,29 +167,58 @@ class VideoProcessor:
                 end += time_diff
             refined_timestamps.append((start, end))
         return refined_timestamps
+    
 
-    def trim_video_clips(self, timestamps):
+    def trim_video_clips(self, timestamps, time_diffs):
         clips = []
-        for i, (start, end) in enumerate(timestamps):
+        for i, ((start, end), time_diff) in enumerate(zip(timestamps, time_diffs)):
             output_clip = self.output_dir / f"clip_{i}.mp4"
+            
+            # Default FFmpeg command for trimming
             ffmpeg_command = [
-                "ffmpeg", "-y",
-                "-i", str(self.video_path),
-                "-ss", f"{start:.4f}",
-                "-to", f"{end:.4f}",
-                "-c:v", "libx264",
-                "-c:a", "aac",
-                str(output_clip)
+                "ffmpeg", "-y",           # Overwrite output files without asking
+                "-i", str(self.video_path), # Input file
+                "-ss", f"{start:.4f}",    # Start time in seconds with four decimal places
+                "-to", f"{end:.4f}",      # End time in seconds with four decimal places
+                "-c:v", "libx264",        # Re-encode video using libx264 codec
+                "-c:a", "aac",            # Re-encode audio using AAC codec
+                str(output_clip)          # Output file
             ]
+
+            # Adjust the FFmpeg command if time_diff is greater than 0
+            if time_diff > 0:
+                # Calculate the original duration
+                original_duration = end - start
+                # Calculate the new duration and speed factor
+                new_duration = original_duration + time_diff
+                speed_factor = original_duration / new_duration
+
+                # Update the FFmpeg command to slow down the clip
+                ffmpeg_command = [
+                    "ffmpeg", "-y",           # Overwrite output files without asking
+                    "-i", str(self.video_path), # Input file
+                    "-ss", f"{start:.4f}",    # Start time in seconds with four decimal places
+                    "-to", f"{end:.4f}",      # End time in seconds with four decimal places
+                    "-filter_complex", 
+                    f"[0:v]setpts={1/speed_factor}*PTS[v];[0:a]atempo={speed_factor}[a]",
+                    "-map", "[v]",
+                    "-map", "[a]",
+                    "-c:v", "libx264",        # Re-encode video using libx264 codec
+                    "-c:a", "aac",            # Re-encode audio using AAC codec
+                    str(output_clip)          # Output file
+                ]
+
             try:
-                subprocess.run(ffmpeg_command, check=True)
-                if os.path.exists(output_clip):
+                subprocess.run(ffmpeg_command, check=True)  # Run the ffmpeg command
+                if os.path.exists(output_clip):             # Check if the output file was created
                     clips.append(output_clip)
                 else:
                     logging.error(f"Failed to create clip: {output_clip}")
             except subprocess.CalledProcessError as e:
                 logging.error(f"ffmpeg command failed: {e}")
+        
         return clips
+    
 
     def concatenate_clips(self, clips, output_path):
         with open(self.output_dir / "filelist.txt", "w") as file:
@@ -207,7 +239,7 @@ class VideoProcessor:
         new_timestamps, old_timestamps = self.generate_length_for_audios()
         time_diffs = self.compare_timestamps(old_timestamps, new_timestamps)
         refined_timestamps = self.refine_timestamps(old_timestamps, time_diffs)
-        trimmed_clips = self.trim_video_clips(refined_timestamps)
+        trimmed_clips = self.trim_video_clips(refined_timestamps, time_diffs)
         concatenated_video_path = self.output_dir / "concatenated_video.mp4"
         self.concatenate_clips(trimmed_clips, concatenated_video_path)
         final_output_path = self.output_dir / "final_video.mp4"
