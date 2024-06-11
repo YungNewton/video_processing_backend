@@ -15,8 +15,13 @@ import zipfile
 
 app = Flask(__name__)
 
-# Configure CORS
-CORS(app, resources={r"/upload": {"origins": "https://yungnewton.github.io"}})
+# Configure CORS to allow all methods except DELETE from all origins
+cors = CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "PATCH", "OPTIONS"]
+    }
+})
 
 logging.basicConfig(level=logging.DEBUG)
 
