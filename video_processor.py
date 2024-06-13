@@ -7,7 +7,7 @@ from pathlib import Path
 from time import sleep
 
 class VideoProcessor:
-    def __init__(self, new_mp3_path, srt_path_new, srt_path_old, video_path, bgm_happy_path, bgm_sad_path, happy_start, happy_end, sad_start, sad_end, bg_width, bg_height, font_size, bottom_padding, output_dir):
+    def __init__(self, new_mp3_path, srt_path_new, srt_path_old, video_path, bgm_happy_path, bgm_sad_path, happy_start, happy_end, sad_start, sad_end, bg_width, bg_height, font_size, bottom_padding, max_width, output_dir):
         self.new_mp3_path = Path(new_mp3_path)
         self.srt_path_new = Path(srt_path_new)
         self.srt_path_old = Path(srt_path_old)
@@ -22,6 +22,7 @@ class VideoProcessor:
         self.bg_height = bg_height
         self.font_size = font_size
         self.bottom_padding = bottom_padding
+        self.max_width = max_width  # New max width attribute
         self.volume_1 = 1.0  # Volume adjustment for happy music
         self.volume_2 = 0.2  # Volume adjustment for sad music
         self.output_dir = Path(output_dir)
@@ -56,6 +57,7 @@ class VideoProcessor:
             "-filter:a", f"volume={volume}",
             str(output_path)
         ])
+
     def overlay_audio(self, concatenated_video_path, final_output_path):
         """
         Overlay the audio with background music on the video.
@@ -133,7 +135,7 @@ class VideoProcessor:
             "-i", str(concatenated_video_path),
             "-i", str(self.new_mp3_path),
             "-i", str(concatenated_music),
-            "-filter_complex", "[2:a]volume=0.3[a2];[1:a]volume=1.0[a1];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
+            "-filter_complex", "[2:a]volume=1[a2];[1:a]volume=3.5[a1];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "copy",
@@ -291,7 +293,7 @@ class VideoProcessor:
         subprocess.run(ffmpeg_command, check=True)
         os.remove(self.output_dir / "filelist.txt")
 
-    def send_to_subtitle_service(self, video_path, srt_path, subtitle_service_url, font_path, font_size, bg_width, bg_height, bottom_padding, retries=3, wait=10):
+    def send_to_subtitle_service(self, video_path, srt_path, subtitle_service_url, font_path, font_size, bg_width, bg_height, bottom_padding, max_width, retries=3, wait=10):
         """
         Send video and SRT to subtitle service and return the processed video path.
 
@@ -303,6 +305,7 @@ class VideoProcessor:
         :param bg_width: int - Width of the background box.
         :param bg_height: int - Height of the background box.
         :param bottom_padding: int - Padding at the bottom of the background.
+        :param max_width: int - Maximum width of the text box before wrapping.
         :param retries: int - Number of retry attempts.
         :param wait: int - Wait time between retries in seconds.
         :return: Path - Path to the processed video with subtitles.
@@ -316,7 +319,8 @@ class VideoProcessor:
             'font_size': font_size,
             'bg_width': bg_width,
             'bg_height': bg_height,
-            'bottom_padding': bottom_padding
+            'bottom_padding': bottom_padding,
+            'max_width': max_width  # Include max width in the request data
         }
 
         for attempt in range(retries):
@@ -351,7 +355,7 @@ class VideoProcessor:
         
         # Send the video and new SRT to subtitle service
         subtitle_service_url = "https://video-processing-addsubs.chickenkiller.com/add_subtitles"
-        subtitled_video_path = self.send_to_subtitle_service(concatenated_video_path, self.srt_path_new, subtitle_service_url, str(self.output_dir / "Montserrat-Bold.ttf"), self.font_size, self.bg_width, self.bg_height, self.bottom_padding)
+        subtitled_video_path = self.send_to_subtitle_service(concatenated_video_path, self.srt_path_new, subtitle_service_url, str(self.output_dir / "Montserrat-Bold.ttf"), self.font_size, self.bg_width, self.bg_height, self.bottom_padding, self.max_width)
 
         final_output_path = self.output_dir / "final_video.mp4"
         self.overlay_audio(subtitled_video_path, final_output_path)
