@@ -15,13 +15,8 @@ import zipfile
 
 app = Flask(__name__)
 
-# Configure CORS to allow all methods except DELETE from all origins
-cors = CORS(app, resources={
-    r"/*": {
-        "origins": "*",
-        "methods": ["GET", "POST", "PUT", "PATCH", "OPTIONS"]
-    }
-})
+# Configure CORS to allow all origins
+CORS(app)
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -41,6 +36,11 @@ def upload_file():
         happy_end = int(request.form.get('happy_end'))
         sad_start = int(request.form.get('sad_start'))
         sad_end = int(request.form.get('sad_end'))
+        bg_width = int(request.form.get('subtitle_width', 650))
+        bg_height = int(request.form.get('subtitle_height', 120))
+        font_size = int(request.form.get('font_size', 35))
+        bottom_padding = int(request.form.get('bottom_padding', 50))
+        max_width = int(request.form.get('max_width', 500))  # New max width entry
 
         if not text_file:
             logging.debug("No text file uploaded")
@@ -58,6 +58,7 @@ def upload_file():
         logging.debug(f"Video file: {video_file.filename if video_file else 'None'}")
         logging.debug(f"Voice ID: {voice_id}, API Key: {api_key}, Speed: {speed}, Set Speed Up: {set_speed_up}")
         logging.debug(f"Happy Start: {happy_start}, Happy End: {happy_end}, Sad Start: {sad_start}, Sad End: {sad_end}")
+        logging.debug(f"Background Width: {bg_width}, Background Height: {bg_height}, Font Size: {font_size}, Bottom Padding: {bottom_padding}, Max Width: {max_width}")
 
         # Create instances of AudioGenerator, SilenceRemover, and VideoToAudioConverter
         audio_generator = AudioGenerator(api_key, speed, set_speed_up)
@@ -153,6 +154,11 @@ def upload_file():
                 happy_end=happy_end,
                 sad_start=sad_start,
                 sad_end=sad_end,
+                bg_width=bg_width,
+                bg_height=bg_height,
+                font_size=font_size,
+                bottom_padding=bottom_padding,
+                max_width=max_width,  # Pass max width to VideoProcessor
                 output_dir=temp_path
             )
             final_video_path = video_processor.process_video()

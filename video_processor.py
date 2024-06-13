@@ -2,10 +2,12 @@ import os
 import re
 import logging
 import subprocess
+import requests
 from pathlib import Path
+from time import sleep
 
 class VideoProcessor:
-    def __init__(self, new_mp3_path, srt_path_new, srt_path_old, video_path, bgm_happy_path, bgm_sad_path, happy_start, happy_end, sad_start, sad_end, output_dir):
+    def __init__(self, new_mp3_path, srt_path_new, srt_path_old, video_path, bgm_happy_path, bgm_sad_path, happy_start, happy_end, sad_start, sad_end, bg_width, bg_height, font_size, bottom_padding, output_dir):
         self.new_mp3_path = Path(new_mp3_path)
         self.srt_path_new = Path(srt_path_new)
         self.srt_path_old = Path(srt_path_old)
@@ -16,6 +18,10 @@ class VideoProcessor:
         self.happy_end = happy_end
         self.sad_start = sad_start
         self.sad_end = sad_end
+        self.bg_width = bg_width
+        self.bg_height = bg_height
+        self.font_size = font_size
+        self.bottom_padding = bottom_padding
         self.volume_1 = 1.0  # Volume adjustment for happy music
         self.volume_2 = 0.2  # Volume adjustment for sad music
         self.output_dir = Path(output_dir)
@@ -46,11 +52,10 @@ class VideoProcessor:
         """
         self.run_ffmpeg_command([
             "ffmpeg", "-y",
-            "-i", input_path,
+            "-i", str(input_path),
             "-filter:a", f"volume={volume}",
-            output_path
+            str(output_path)
         ])
-
     def overlay_audio(self, concatenated_video_path, final_output_path):
         """
         Overlay the audio with background music on the video.
@@ -88,25 +93,47 @@ class VideoProcessor:
         adjusted_volume_music_2 = self.output_dir / "adjusted_volume_music_2.wav"
         self.adjust_volume(trimmed_music_2, adjusted_volume_music_2, self.volume_2)
 
-        # Concatenate the two trimmed music files with a smooth transition
-        concatenated_music = self.output_dir / "concatenated_music.wav"
+        # Loop the happy and sad music to cover the specified time ranges
+        looped_music_1 = self.output_dir / "looped_music_1.wav"
+        looped_music_2 = self.output_dir / "looped_music_2.wav"
+
         self.run_ffmpeg_command([
             "ffmpeg", "-y",
             "-i", str(adjusted_volume_music_1),
+            "-filter_complex", f"aloop=loop=-1:size=2e+09,atrim=0:{self.happy_end - self.happy_start}[a]",
+            "-map", "[a]",
+            "-c:a", "pcm_s16le",
+            str(looped_music_1)
+        ])
+
+        self.run_ffmpeg_command([
+            "ffmpeg", "-y",
             "-i", str(adjusted_volume_music_2),
+            "-filter_complex", f"aloop=loop=-1:size=2e+09,atrim=0:{self.sad_end - self.sad_start}[a]",
+            "-map", "[a]",
+            "-c:a", "pcm_s16le",
+            str(looped_music_2)
+        ])
+
+        # Concatenate the looped music files
+        concatenated_music = self.output_dir / "concatenated_music.wav"
+        self.run_ffmpeg_command([
+            "ffmpeg", "-y",
+            "-i", str(looped_music_1),
+            "-i", str(looped_music_2),
             "-filter_complex", "[0:a][1:a]acrossfade=d=0.1[a]",
             "-map", "[a]",
             "-c:a", "pcm_s16le",
             str(concatenated_music)
         ])
 
-        # Combine the concatenated music with the original video
+        # Combine the looped music with the original video
         self.run_ffmpeg_command([
             "ffmpeg", "-y",
             "-i", str(concatenated_video_path),
             "-i", str(self.new_mp3_path),
             "-i", str(concatenated_music),
-            "-filter_complex", "[2:a]volume=0.3[a2];[1:a][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
+            "-filter_complex", "[2:a]volume=0.3[a2];[1:a]volume=1.0[a1];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "copy",
@@ -115,30 +142,59 @@ class VideoProcessor:
         ])
 
     def parse_srt(self, srt_path):
-        timestamps = []
-        pattern = re.compile(r'(\d{1,2}:\d{2}:\d{2},\d{3}) --> (\d{1,2}:\d{2}:\d{2},\d{3})')
-        with open(srt_path, 'r') as file:
+        """
+        Parse an SRT file to extract timestamps and text.
+
+        :param srt_path: str - Path to the SRT file.
+        :return: list of tuples - List of (start_time, end_time, text) tuples.
+        """
+        subtitles = []  # Initialize the subtitles list
+        pattern = re.compile(r'(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})')
+        with open(srt_path, 'r', encoding='utf-8') as file:
             lines = file.readlines()
+            text = ""
             for line in lines:
+                line = line.strip()
                 matches = pattern.findall(line)
                 if matches:
+                    if text:
+                        subtitles[-1] = (*subtitles[-1], text)
                     start_time = matches[0][0]
                     end_time = matches[0][1]
-                    start_ms = self.srt_time_to_seconds(start_time)
-                    end_ms = self.srt_time_to_seconds(end_time)
-                    timestamps.append((start_ms, end_ms))
-        return timestamps
+                    subtitles.append((start_time, end_time))
+                    text = ""
+                elif line and not line.isdigit():
+                    text += " " + line if text else line
+            if text:
+                subtitles[-1] = (*subtitles[-1], text)
+            else:
+                # Add an empty string for text if none was found
+                if len(subtitles[-1]) == 2:
+                    subtitles[-1] = (*subtitles[-1], "")
+        
+        # Ensure all entries have three elements
+        for i in range(len(subtitles)):
+            if len(subtitles[i]) < 3:
+                subtitles[i] = (*subtitles[i], "")
+        
+        return subtitles
 
     @staticmethod
     def srt_time_to_seconds(srt_time):
+        """
+        Convert SRT time format to seconds.
+
+        :param srt_time: str - Time string in SRT format (H:M:S,mmm).
+        :return: float - Time in seconds.
+        """
         parts = srt_time.split(":")
-        h = float(parts[0])
-        m = float(parts[1])
+        h = int(parts[0])
+        m = int(parts[1])
         s_ms = parts[2].split(",")
-        s = float(s_ms[0])
-        ms = float(s_ms[1])
-        ms /= 1000.0
-        total_seconds = h * 3600 + m * 60 + s + ms
+        s = int(s_ms[0])
+        ms = int(s_ms[1])
+
+        total_seconds = h * 3600 + m * 60 + s + ms / 1000.0
         return total_seconds
 
     def generate_length_for_audios(self):
@@ -150,9 +206,9 @@ class VideoProcessor:
         if len(old_timestamps) != len(new_timestamps):
             raise ValueError("The number of old and new timestamps must be the same.")
         time_diffs = []
-        for (old_start, old_end), (new_start, new_end) in zip(old_timestamps, new_timestamps):
-            old_duration = old_end - old_start
-            new_duration = new_end - new_start
+        for (old_start, old_end, _), (new_start, new_end, _) in zip(old_timestamps, new_timestamps):
+            old_duration = self.srt_time_to_seconds(old_end) - self.srt_time_to_seconds(old_start)
+            new_duration = self.srt_time_to_seconds(new_end) - self.srt_time_to_seconds(new_start)
             time_diff = new_duration - old_duration
             if abs(time_diff) < tolerance:
                 time_diff = 0  # Consider negligible differences as zero
@@ -162,33 +218,34 @@ class VideoProcessor:
 
     def refine_timestamps(self, old_timestamps, time_diffs):
         refined_timestamps = []
-        for (start, end), time_diff in zip(old_timestamps, time_diffs):
+        for (start, end, text), time_diff in zip(old_timestamps, time_diffs):
             if time_diff < 0:
-                end += time_diff
-            refined_timestamps.append((start, end))
+                end_seconds = self.srt_time_to_seconds(end)
+                end_seconds += time_diff
+                end = f"{int(end_seconds // 3600):02}:{int((end_seconds % 3600) // 60):02}:{int(end_seconds % 60):02},{int((end_seconds % 1) * 1000):03}"
+            refined_timestamps.append((start, end, text))
         return refined_timestamps
-    
 
     def trim_video_clips(self, timestamps, time_diffs):
         clips = []
-        for i, ((start, end), time_diff) in enumerate(zip(timestamps, time_diffs)):
+        for i, ((start, end, _), time_diff) in enumerate(zip(timestamps, time_diffs)):
             output_clip = self.output_dir / f"clip_{i}.mp4"
             
             # Default FFmpeg command for trimming
             ffmpeg_command = [
                 "ffmpeg", "-y",           # Overwrite output files without asking
                 "-i", str(self.video_path), # Input file
-                "-ss", f"{start:.4f}",    # Start time in seconds with four decimal places
-                "-to", f"{end:.4f}",      # End time in seconds with four decimal places
+                "-ss", f"{self.srt_time_to_seconds(start):.4f}",    # Start time in seconds with four decimal places
+                "-to", f"{self.srt_time_to_seconds(end):.4f}",      # End time in seconds with four decimal places
                 "-c:v", "libx264",        # Re-encode video using libx264 codec
                 "-c:a", "aac",            # Re-encode audio using AAC codec
                 str(output_clip)          # Output file
             ]
 
             # Adjust the FFmpeg command if time_diff is greater than 0
-            if time_diff > 0:
+            if time_diff > 0.8:
                 # Calculate the original duration
-                original_duration = end - start
+                original_duration = self.srt_time_to_seconds(end) - self.srt_time_to_seconds(start)
                 # Calculate the new duration and speed factor
                 new_duration = original_duration + time_diff
                 speed_factor = original_duration / new_duration
@@ -197,8 +254,8 @@ class VideoProcessor:
                 ffmpeg_command = [
                     "ffmpeg", "-y",           # Overwrite output files without asking
                     "-i", str(self.video_path), # Input file
-                    "-ss", f"{start:.4f}",    # Start time in seconds with four decimal places
-                    "-to", f"{end:.4f}",      # End time in seconds with four decimal places
+                    "-ss", f"{self.srt_time_to_seconds(start):.4f}",    # Start time in seconds with four decimal places
+                    "-to", f"{self.srt_time_to_seconds(end):.4f}",      # End time in seconds with four decimal places
                     "-filter_complex", 
                     f"[0:v]setpts={1/speed_factor}*PTS[v];[0:a]atempo={speed_factor}[a]",
                     "-map", "[v]",
@@ -218,7 +275,6 @@ class VideoProcessor:
                 logging.error(f"ffmpeg command failed: {e}")
         
         return clips
-    
 
     def concatenate_clips(self, clips, output_path):
         with open(self.output_dir / "filelist.txt", "w") as file:
@@ -235,13 +291,69 @@ class VideoProcessor:
         subprocess.run(ffmpeg_command, check=True)
         os.remove(self.output_dir / "filelist.txt")
 
+    def send_to_subtitle_service(self, video_path, srt_path, subtitle_service_url, font_path, font_size, bg_width, bg_height, bottom_padding, retries=3, wait=10):
+        """
+        Send video and SRT to subtitle service and return the processed video path.
+
+        :param video_path: Path - Path to the input video file.
+        :param srt_path: Path - Path to the SRT file.
+        :param subtitle_service_url: str - URL of the subtitle service.
+        :param font_path: str - Path to the font file.
+        :param font_size: int - Font size for the subtitles.
+        :param bg_width: int - Width of the background box.
+        :param bg_height: int - Height of the background box.
+        :param bottom_padding: int - Padding at the bottom of the background.
+        :param retries: int - Number of retry attempts.
+        :param wait: int - Wait time between retries in seconds.
+        :return: Path - Path to the processed video with subtitles.
+        """
+        files = {
+            'video': open(video_path, 'rb'),
+            'srt': open(srt_path, 'rb')
+        }
+        data = {
+            'font_path': font_path,
+            'font_size': font_size,
+            'bg_width': bg_width,
+            'bg_height': bg_height,
+            'bottom_padding': bottom_padding
+        }
+
+        for attempt in range(retries):
+            try:
+                response = requests.post(subtitle_service_url, files=files, data=data, timeout=6000)
+                if response.status_code == 200:
+                    # Save the received video
+                    processed_video_path = self.output_dir / "video_with_subtitles.mp4"
+                    with open(processed_video_path, 'wb') as f:
+                        f.write(response.content)
+                    return processed_video_path
+                else:
+                    logging.error(f"Failed to receive processed video. Status code: {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Error contacting subtitle service: {e}")
+
+            logging.info(f"Retrying... ({attempt + 1}/{retries})")
+            sleep(wait)
+
+        raise Exception("Failed to receive processed video after multiple attempts")
+
     def process_video(self):
         new_timestamps, old_timestamps = self.generate_length_for_audios()
+        print(f"New timestamps: {new_timestamps}")  # Debugging statement
+        print(f"Old timestamps: {old_timestamps}")  # Debugging statement
         time_diffs = self.compare_timestamps(old_timestamps, new_timestamps)
         refined_timestamps = self.refine_timestamps(old_timestamps, time_diffs)
+        print(f"Refined timestamps: {refined_timestamps}")  # Debugging statement
         trimmed_clips = self.trim_video_clips(refined_timestamps, time_diffs)
         concatenated_video_path = self.output_dir / "concatenated_video.mp4"
         self.concatenate_clips(trimmed_clips, concatenated_video_path)
+        
+        # Send the video and new SRT to subtitle service
+        subtitle_service_url = "https://video-processing-addsubs.chickenkiller.com/add_subtitles"
+        subtitled_video_path = self.send_to_subtitle_service(concatenated_video_path, self.srt_path_new, subtitle_service_url, str(self.output_dir / "Montserrat-Bold.ttf"), self.font_size, self.bg_width, self.bg_height, self.bottom_padding)
+
         final_output_path = self.output_dir / "final_video.mp4"
-        self.overlay_audio(concatenated_video_path, final_output_path)
+        self.overlay_audio(subtitled_video_path, final_output_path)
+
         return final_output_path
